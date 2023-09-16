@@ -1,6 +1,6 @@
 var test = require('tape')
 var rai = require('../')('testing-' + Math.random(), { size: 256 })
-var ram = require('random-access-memory')
+var Ram = require('random-access-memory')
 var randombytes = require('randombytes')
 var balloc = require('buffer-alloc')
 
@@ -13,7 +13,7 @@ test('reopen', function (t) {
   var store = rai('cool.txt')
   function istore () { if (Math.random() > 0.75) store = rai('cool.txt'); return store }
 
-  var mstore = ram('cool.txt')
+  var mstore = new Ram('cool.txt')
 
   ;(function () {
     var zeros = balloc(500 + 100)

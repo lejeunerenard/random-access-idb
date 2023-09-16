@@ -10,7 +10,7 @@ var DELIM = '\0'
 
 module.exports = function (dbname, xopts) {
   if (!xopts) xopts = {}
-  
+
   var win = typeof window !== 'undefined' ? window
   : (typeof self !== 'undefined' ? self : {})
 
@@ -51,131 +51,133 @@ module.exports = function (dbname, xopts) {
   }
 }
 
-function Store (opts) {
-  if (!(this instanceof Store)) return new Store(opts)
-  RandomAccess.call(this)
-  if (!opts) opts = {}
-  if (typeof opts === 'string') opts = { name: opts }
-  this.size = opts.size || 4096
-  this.name = opts.name
-  this.length = opts.length || 0
-  this._getdb = opts.db
-}
-inherits(Store, RandomAccess)
+class Store extends RandomAccess {
+  constructor (opts) {
+    super(opts)
+    if (!(this instanceof Store)) return new Store(opts)
 
-Store.prototype._blocks = function (i, j) {
-  return blocks(this.size, i, j)
-}
+    if (!opts) opts = {}
+    if (typeof opts === 'string') opts = { name: opts }
+    this.size = opts.size || 4096
+    this.name = opts.name
+    this.length = opts.length || 0
+    this._getdb = opts.db
+  }
 
-Store.prototype._read = function (req) {
-  var self = this
-  var buffers = []
-  self._store('readonly', function (err, store) {
-    if ((self.length || 0) < req.offset + req.size) {
-      return req.callback(new Error('Could not satisfy length'), null)
-    }
-    if (err) return req.callback(err)
-    var offsets = self._blocks(req.offset, req.offset + req.size)
-    var pending = offsets.length + 1
-    var firstBlock = offsets.length > 0 ? offsets[0].block : 0
-    for (var i = 0; i < offsets.length; i++) (function (o) {
-      var key = self.name + DELIM + o.block
-      backify(store.get(key), function (err, ev) {
-        if (err) return req.callback(err)
-        buffers[o.block - firstBlock] = ev.target.result
-          ? b4a.from(ev.target.result.subarray(o.start, o.end))
-          : bufferAlloc(o.end - o.start)
-        if (--pending === 0) req.callback(null, b4a.concat(buffers))
-      })
-    })(offsets[i])
-    if (--pending === 0) req.callback(null, b4a.concat(buffers))
-  })
-}
+  _blocks (i, j) {
+    return blocks(this.size, i, j)
+  }
 
-Store.prototype._write = function (req) {
-  var self = this
-  self._store('readwrite', function (err, store) {
-    if (err) return req.callback(err)
-    var offsets = self._blocks(req.offset, req.offset + req.data.length)
-    var pending = 1
-    var buffers = {}
-    for (var i = 0; i < offsets.length; i++) (function (o, i) {
-      if (o.end - o.start === self.size) return
-      pending++
-      var key = self.name + DELIM + o.block
-      backify(store.get(key), function (err, ev) {
-        if (err) return req.callback(err)
-        buffers[i] = b4a.from(ev.target.result || bufferAlloc(self.size))
-        if (--pending === 0) write(store, offsets, buffers)
-      })
-    })(offsets[i], i)
-    if (--pending === 0) write(store, offsets, buffers)
-  })
-
-  function write (store, offsets, buffers) {
-    var block
-    for (var i = 0, j = 0; i < offsets.length; i++) {
-      var o = offsets[i]
-      var len = o.end - o.start
-      if (len === self.size) {
-        block = b4a.from(req.data.slice(j, j + len))
-      } else {
-        block = buffers[i]
-        b4a.copy(req.data, block, o.start, j, j + len)
+  _read (req) {
+    var self = this
+    var buffers = []
+    self._store('readonly', function (err, store) {
+      if ((self.length || 0) < req.offset + req.size) {
+        return req.callback(new Error('Could not satisfy length'), null)
       }
-      store.put(block, self.name + DELIM + o.block)
-      j += len
-    }
-
-    var length = Math.max(self.length || 0, req.offset + req.data.length)
-    store.put(length, self.name + DELIM + 'length')
-    store.transaction.addEventListener('complete', function () {
-      self.length = length
-      req.callback(null)
-    })
-    store.transaction.addEventListener('error', function (err) {
-      req.callback(err)
+      if (err) return req.callback(err)
+      var offsets = self._blocks(req.offset, req.offset + req.size)
+      var pending = offsets.length + 1
+      var firstBlock = offsets.length > 0 ? offsets[0].block : 0
+      for (var i = 0; i < offsets.length; i++) (function (o) {
+        var key = self.name + DELIM + o.block
+        backify(store.get(key), function (err, ev) {
+          if (err) return req.callback(err)
+          buffers[o.block - firstBlock] = ev.target.result
+            ? b4a.from(ev.target.result.subarray(o.start, o.end))
+            : bufferAlloc(o.end - o.start)
+          if (--pending === 0) req.callback(null, b4a.concat(buffers))
+        })
+      })(offsets[i])
+      if (--pending === 0) req.callback(null, b4a.concat(buffers))
     })
   }
-}
 
-Store.prototype._store = function (mode, cb) {
-  cb = once(cb)
-  var self = this
-  self._getdb(function (db) {
-    var tx = db.transaction(['data'], mode)
-    var store = tx.objectStore('data')
-    tx.addEventListener('error', cb)
-    cb(null, store)
-  })
-}
-
-Store.prototype._open = function (req) {
-  var self = this
-  this._getdb(function (db) {
-    self._store('readonly', function (err, store) {
+  _write (req) {
+    var self = this
+    self._store('readwrite', function (err, store) {
       if (err) return req.callback(err)
-      backify(store.get(self.name + DELIM + 'length'), function (err, ev) {
-        if (err) return req.callback(err)
-        self.length = ev.target.result || 0
+      var offsets = self._blocks(req.offset, req.offset + req.data.length)
+      var pending = 1
+      var buffers = {}
+      for (var i = 0; i < offsets.length; i++) (function (o, i) {
+        if (o.end - o.start === self.size) return
+        pending++
+        var key = self.name + DELIM + o.block
+        backify(store.get(key), function (err, ev) {
+          if (err) return req.callback(err)
+          buffers[i] = b4a.from(ev.target.result || bufferAlloc(self.size))
+          if (--pending === 0) write(store, offsets, buffers)
+        })
+      })(offsets[i], i)
+      if (--pending === 0) write(store, offsets, buffers)
+    })
+
+    function write (store, offsets, buffers) {
+      var block
+      for (var i = 0, j = 0; i < offsets.length; i++) {
+        var o = offsets[i]
+        var len = o.end - o.start
+        if (len === self.size) {
+          block = b4a.from(req.data.slice(j, j + len))
+        } else {
+          block = buffers[i]
+          b4a.copy(req.data, block, o.start, j, j + len)
+        }
+        store.put(block, self.name + DELIM + o.block)
+        j += len
+      }
+
+      var length = Math.max(self.length || 0, req.offset + req.data.length)
+      store.put(length, self.name + DELIM + 'length')
+      store.transaction.addEventListener('complete', function () {
+        self.length = length
         req.callback(null)
       })
+      store.transaction.addEventListener('error', function (err) {
+        req.callback(err)
+      })
+    }
+  }
+
+  _store (mode, cb) {
+    cb = once(cb)
+    var self = this
+    self._getdb(function (db) {
+      var tx = db.transaction(['data'], mode)
+      var store = tx.objectStore('data')
+      tx.addEventListener('error', cb)
+      cb(null, store)
     })
-  })
-}
+  }
 
-Store.prototype._close = function (req) {
-  this._getdb(function (db) {
-    //db.close() // TODO: reopen gracefully. Close breaks with corestore, as innercorestore closes the db
-    req.callback()
-  })
-}
+  _open (req) {
+    var self = this
+    this._getdb(function (db) {
+      self._store('readonly', function (err, store) {
+        if (err) return req.callback(err)
+        backify(store.get(self.name + DELIM + 'length'), function (err, ev) {
+          if (err) return req.callback(err)
+          self.length = ev.target.result || 0
+          req.callback(null)
+        })
+      })
+    })
+  }
 
-Store.prototype._stat = function (req) {
-  var self = this
-  nextTick(function () {
-    req.callback(null, { size: self.length })
-  })
+  _close (req) {
+    this._getdb(function (db) {
+      //db.close() // TODO: reopen gracefully. Close breaks with corestore, as innercorestore closes the db
+      req.callback()
+    })
+  }
+
+  _stat (req) {
+    var self = this
+    nextTick(function () {
+      req.callback(null, { size: self.length })
+    })
+  }
 }
 
 function backify (r, cb) {
