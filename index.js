@@ -5,6 +5,7 @@ var once = require('once')
 var blocks = require('./lib/blocks.js')
 var bufferFrom = require('buffer-from')
 var bufferAlloc = require('buffer-alloc')
+var b4a = require('b4a')
 
 var DELIM = '\0'
 
@@ -121,7 +122,7 @@ Store.prototype._write = function (req) {
         block = bufferFrom(req.data.slice(j, j + len))
       } else {
         block = buffers[i]
-        req.data.copy(block, o.start, j, j + len)
+        b4a.copy(req.data, block, o.start, j, j + len)
       }
       store.put(block, self.name + DELIM + o.block)
       j += len
