@@ -3,7 +3,6 @@ var inherits = require('inherits')
 var nextTick = require('next-tick')
 var once = require('once')
 var blocks = require('./lib/blocks.js')
-var bufferFrom = require('buffer-from')
 var bufferAlloc = require('buffer-alloc')
 var b4a = require('b4a')
 
@@ -84,12 +83,12 @@ Store.prototype._read = function (req) {
       backify(store.get(key), function (err, ev) {
         if (err) return req.callback(err)
         buffers[o.block - firstBlock] = ev.target.result
-          ? bufferFrom(ev.target.result.subarray(o.start, o.end))
+          ? b4a.from(ev.target.result.subarray(o.start, o.end))
           : bufferAlloc(o.end - o.start)
-        if (--pending === 0) req.callback(null, Buffer.concat(buffers))
+        if (--pending === 0) req.callback(null, b4a.concat(buffers))
       })
     })(offsets[i])
-    if (--pending === 0) req.callback(null, Buffer.concat(buffers))
+    if (--pending === 0) req.callback(null, b4a.concat(buffers))
   })
 }
 
@@ -106,7 +105,7 @@ Store.prototype._write = function (req) {
       var key = self.name + DELIM + o.block
       backify(store.get(key), function (err, ev) {
         if (err) return req.callback(err)
-        buffers[i] = bufferFrom(ev.target.result || bufferAlloc(self.size))
+        buffers[i] = b4a.from(ev.target.result || bufferAlloc(self.size))
         if (--pending === 0) write(store, offsets, buffers)
       })
     })(offsets[i], i)
@@ -119,7 +118,7 @@ Store.prototype._write = function (req) {
       var o = offsets[i]
       var len = o.end - o.start
       if (len === self.size) {
-        block = bufferFrom(req.data.slice(j, j + len))
+        block = b4a.from(req.data.slice(j, j + len))
       } else {
         block = buffers[i]
         b4a.copy(req.data, block, o.start, j, j + len)

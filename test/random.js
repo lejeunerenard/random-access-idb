@@ -3,6 +3,7 @@ var rai = require('../')('testing-' + Math.random(), { size: 256 })
 var ram = require('random-access-memory')
 var randombytes = require('randombytes')
 var balloc = require('buffer-alloc')
+var b4a = require('b4a')
 
 test('random', function (t) {
   var nwrites = 500
@@ -61,7 +62,7 @@ test('random', function (t) {
         t.ok((data.ierr && data.merr),
           'read: offset=' + offset + ', length=' + len)
       } else {
-        t.ok((data.istore).equals(data.mstore),
+        t.ok(b4a.equals(data.istore, data.mstore),
           'read: offset=' + offset + ', length=' + len)
       }
       read(i + 1)
