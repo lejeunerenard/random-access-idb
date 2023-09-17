@@ -93,6 +93,58 @@ class Store extends RandomAccess {
     })
   }
 
+  _del (req) {
+    var self = this
+    var buffers = []
+    self._store('readwrite', function (err, store) {
+      if (err) return req.callback(err)
+      var offsets = self._blocks(req.offset, Math.min(self.length, req.offset + req.size))
+      var pending = offsets.length + 1
+      var firstBlock = offsets.length > 0 ? offsets[0].block : 0
+      var isTruncation = req.offset + req.size >= self.length
+      for (var i = 0; i < offsets.length; i++) (function (o) {
+        var key = self.name + DELIM + o.block
+        var len = o.end - o.start
+
+        // Delete key if truncating and its not a partial block
+        if (isTruncation && (i !== 0 || len === self.size)) {
+          backify(store.delete(key), function (err) {
+            if (err) return req.callback(err)
+            if (--pending === 0) done(store, req)
+          })
+        } else {
+          // Get block to be zeroed
+          backify(store.get(key), function (err, ev) {
+            if (err) return req.callback(err)
+            var block = b4a.from(ev.target.result || bufferAlloc(self.size))
+
+            block.fill(0, o.start, o.end)
+
+            // Commit zeros
+            backify(store.put(block, self.name + DELIM + o.block), function (err) {
+              if (err) return req.callback(err)
+              if (--pending === 0) done(store, req)
+            })
+          })
+        }
+      })(offsets[i])
+      if (--pending === 0) done(store, req)
+    })
+
+    function done (store, req) {
+      // Update length in db & on object
+      var length = req.offset + req.size >= self.length ? req.offset : self.length
+      store.put(length, self.name + DELIM + 'length')
+      store.transaction.addEventListener('complete', function () {
+        self.length = length
+        req.callback(null)
+      })
+      store.transaction.addEventListener('error', function (err) {
+        req.callback(err)
+      })
+    }
+  }
+
   _write (req) {
     var self = this
     self._store('readwrite', function (err, store) {
