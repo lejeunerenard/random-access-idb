@@ -2,7 +2,6 @@ var test = require('tape')
 var rai = require('../')('testing-' + Math.random(), { size: 256 })
 var Ram = require('random-access-memory')
 var randombytes = require('randombytes')
-var balloc = require('buffer-alloc')
 var b4a = require('b4a')
 
 test('random', function (t) {
@@ -13,7 +12,7 @@ test('random', function (t) {
   var mstore = new Ram('cool.txt')
 
   ;(function () {
-    var zeros = balloc(5000 + 1000)
+    var zeros = b4a.alloc(5000 + 1000)
     var pending = 2
     istore.write(0, zeros, function (err) {
       t.ifError(err)

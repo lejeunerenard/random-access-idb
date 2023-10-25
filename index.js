@@ -3,7 +3,6 @@ var inherits = require('inherits')
 var nextTick = require('next-tick')
 var once = require('once')
 var blocks = require('./lib/blocks.js')
-var bufferAlloc = require('buffer-alloc')
 var b4a = require('b4a')
 
 var DELIM = '\0'
@@ -85,7 +84,7 @@ class Store extends RandomAccess {
           if (err) return req.callback(err)
           buffers[o.block - firstBlock] = ev.target.result
             ? b4a.from(ev.target.result.subarray(o.start, o.end))
-            : bufferAlloc(o.end - o.start)
+            : b4a.alloc(o.end - o.start)
           if (--pending === 0) req.callback(null, b4a.concat(buffers))
         })
       })(offsets[i])
@@ -116,7 +115,7 @@ class Store extends RandomAccess {
           // Get block to be zeroed
           backify(store.get(key), function (err, ev) {
             if (err) return req.callback(err)
-            var block = b4a.from(ev.target.result || bufferAlloc(self.size))
+            var block = b4a.from(ev.target.result || b4a.alloc(self.size))
 
             block.fill(0, o.start, o.end)
 
@@ -158,7 +157,7 @@ class Store extends RandomAccess {
         var key = self.name + DELIM + o.block
         backify(store.get(key), function (err, ev) {
           if (err) return req.callback(err)
-          buffers[i] = b4a.from(ev.target.result || bufferAlloc(self.size))
+          buffers[i] = b4a.from(ev.target.result || b4a.alloc(self.size))
           if (--pending === 0) write(store, offsets, buffers)
         })
       })(offsets[i], i)
